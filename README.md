@@ -1,7 +1,5 @@
 # Revisiting On-Policy Distillation: Empirical Failure Modes and Simple Fixes
 
-Code release for our study of why sampled-token on-policy distillation becomes brittle in long-horizon LLM post-training, and how a few simple changes can make it substantially more stable. Built on top of [verl-agent](https://github.com/langfengQ/verl-agent), this repository supports single-task and multi-task OPD with both the **original OPD** objective and our **Teacher-TopK** objective.
-
 - 📝 Blog: [Revisiting On-Policy Distillation: Empirical Failure Modes and Simple Fixes](https://notion.so/yuqianfu/Revisiting-On-Policy-Distillation-Empirical-Failure-Modes-and-Simple-Fixes-31dd5cc40dd181f89eead3de7181df1d)
 - 📄 Paper: [arXiv:2603.25562](https://arxiv.org/abs/2603.25562)
 - 💻 Code: [hhh675597/revisiting_opd](https://github.com/hhh675597/revisiting_opd)
