@@ -1,9 +1,18 @@
-# verl-agent-multi
+# Revisiting On-Policy Distillation: Empirical Failure Modes and Simple Fixes
 
-Multi-task on-policy distillation (OPD) training for LLM agents, built on top of [verl-agent](https://github.com/langfengQ/verl-agent). This codebase supports single-task and multi-task OPD with both the **original OPD** objective and our **Teacher-TopK** objective.
+Code release for our study of why sampled-token on-policy distillation becomes brittle in long-horizon LLM post-training, and how a few simple changes can make it substantially more stable. Built on top of [verl-agent](https://github.com/langfengQ/verl-agent), this repository supports single-task and multi-task OPD with both the **original OPD** objective and our **Teacher-TopK** objective.
+
+- 📝 Blog: [Revisiting On-Policy Distillation: Empirical Failure Modes and Simple Fixes](https://notion.so/yuqianfu/Revisiting-On-Policy-Distillation-Empirical-Failure-Modes-and-Simple-Fixes-31dd5cc40dd181f89eead3de7181df1d)
+- 📄 Paper: [arXiv:2603.25562](https://arxiv.org/abs/2603.25562)
+- 💻 Code: [hhh675597/revisiting_opd](https://github.com/hhh675597/revisiting_opd)
+
+## Overview
+
+On-policy distillation (OPD) trains a student on its own rollouts using teacher feedback. In practice, sampled-token OPD can be brittle because the learning signal is concentrated on a single sampled token, teacher guidance becomes less reliable on student-generated prefixes, and tokenizer or special-token mismatch can further distort the comparison. This repository includes our simple fixes, including a teacher top-K truncated reverse-KL objective, top-p rollouts, and special-token masking, together with the training recipes used in our reasoning and agentic multi-task experiments.
 
 ## Table of Contents
 
+- [Overview](#overview)
 - [Installation](#installation)
 - [Data Preparation](#data-preparation)
   - [Math Dataset](#math-dataset)
