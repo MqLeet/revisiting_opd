@@ -86,10 +86,10 @@ python examples/data_preprocess/prepare_multitask_data.py \
 
 ### Math
 
-Train a student model on math using OPD with a math teacher:
+Train a student model on math using Teacher-TopK distillation with a math teacher:
 
 ```bash
-bash run_opd_math_qwen2.5-7b_it.sh
+bash examples/opd/opd_math_qwen2.5-7b_it.sh
 ```
 
 Key variables to configure in the script:
@@ -108,7 +108,7 @@ The entry point for single-task is `verl.trainer.main_ppo_multitask` (also used 
 Train a student on ALFWorld with an ALFWorld-specific teacher:
 
 ```bash
-bash run_opd_alfworld_qwen2.5_7b_it.sh
+bash examples/opd/opd_alfworld_qwen2.5_7b_it.sh
 ```
 
 Key variables:
@@ -118,7 +118,7 @@ STUDENT_MODEL="/path/to/Qwen2.5-7B-Instruct"
 ALFWORLD_TEACHER="/path/to/alfworld-teacher-gigpo-qwen2.5-7b"  # reference model
 ```
 
-The single-task ALFWorld entry point uses `verl.trainer.main_ppo` with `env.env_name=alfworld/AlfredTWEnv`.
+The single-task ALFWorld example also uses `verl.trainer.main_ppo_multitask`. Single-task behavior comes from `env.env_name=alfworld/AlfredTWEnv`.
 
 ---
 
@@ -127,7 +127,7 @@ The single-task ALFWorld entry point uses `verl.trainer.main_ppo` with `env.env_
 Multi-task training alternates between tasks in each batch (sequential batching). The trainer dynamically swaps the reference model per task.
 
 ```bash
-bash run_opd_multitask_qwen2.5-7b_it.sh
+bash examples/opd/opd_multitask_qwen2.5-7b_it.sh
 ```
 
 The multi-task config block in the `.sh` file defines per-task settings:
@@ -162,7 +162,7 @@ The multi-task config block in the `.sh` file defines per-task settings:
 
 The original on-policy distillation uses token-level KL divergence between the student and teacher as the advantage signal. It is controlled by `algorithm.adv_estimator=opd`.
 
-Example script: `run_original_opd_math_qwen2.5_7b_it.sh`
+Example script: `examples/opd/opd_original_math_qwen2.5_7b_it.sh`
 
 Key flags for original OPD:
 
@@ -189,7 +189,7 @@ python3 -m verl.trainer.main_ppo_multitask \
 
 Our Teacher-TopK objective replaces the OPD advantage with a memory-efficient full reverse-KL loss computed over only the teacher's top-K token positions. Since the loss is applied directly (not via advantages), `algorithm.adv_estimator` is set to `placeholder`.
 
-Example script: `run_opd_math_qwen2.5-7b_it.sh`
+Example script: `examples/opd/opd_math_qwen2.5-7b_it.sh`
 
 Key flags for Teacher-TopK:
 
@@ -228,7 +228,7 @@ python3 -m verl.trainer.main_ppo_multitask \
 For comparison, you can also run multi-task training with GRPO (reward-based advantage, no distillation):
 
 ```bash
-bash run_grpo_multitask_qwen2.5-7b_it.sh
+bash examples/opd/opd_grpo_multitask_qwen2.5-7b_it.sh
 ```
 
 Key differences from OPD:
