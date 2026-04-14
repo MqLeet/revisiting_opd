@@ -1167,6 +1167,12 @@ class DataParallelPPOActor(BasePPOActor):
         temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
         multi_turn = data.meta_info.get("multi_turn", False)
 
+        # Credit weighting config (for GRPO_CREDIT estimator)
+        credit_enable = data.meta_info.get("credit_enable", False)
+        credit_lambda = data.meta_info.get("credit_lambda", 0.5)
+        credit_clip_eps = data.meta_info.get("credit_clip_eps", 0.5)
+        credit_use_reliability_gating = data.meta_info.get("credit_use_reliability_gating", False)
+
         select_keys = ["responses", "input_ids", "attention_mask", "position_ids", "old_log_probs", "advantages"]
         if multi_turn:
             select_keys.append("loss_mask")
@@ -1276,6 +1282,54 @@ class DataParallelPPOActor(BasePPOActor):
                         policy_loss_fn = compute_policy_loss_gspo
                     else:
                         raise ValueError(f"Unsupported loss_mode: {loss_mode}")
+
+                    # --- Distribution-level credit weighting (RLSD + Revisiting OPD) ---
+                    if credit_enable and use_full_kl and kl_topk is not None and kl_topk > 0:
+                        with torch.no_grad():
+                            # Compute top-K KL(student || teacher) as credit signal
+                            # Reuses actor_logits_k and ref_logits_k already computed
+                            credit_kl_L1, _, _ = compute_memory_efficient_kl(
+                                actor_logits_k=actor_logits_k,
+                                actor_logsumexp=actor_logsumexp,
+                                ref_logits_k=data["ref_logits_k"],
+                                ref_logsumexp=data["ref_logsumexp"],
+                                kl_type="full_reverse",
+                                use_tail_sampling=False,
+                                norm_to_one_for_kl=self.config.get("norm_to_one_for_kl", True),
+                                clip_log_ratio=False,
+                                sampled_indices=responses,
+                            )
+                            d_t = credit_kl_L1.detach()  # (bs, resp_len), stop-gradient
+
+                            # Optional reliability gating
+                            if credit_use_reliability_gating:
+                                actor_probs_k = torch.nn.functional.softmax(actor_logits_k.detach(), dim=-1)
+                                ref_probs_k = torch.nn.functional.softmax(data["ref_logits_k"], dim=-1)
+                                overlap_t = torch.min(actor_probs_k, ref_probs_k).sum(dim=-1)  # (bs, resp_len)
+                                mean_d_for_gate = verl_F.masked_mean(d_t, response_mask)
+                                d_t = overlap_t * d_t + (1 - overlap_t) * mean_d_for_gate
+
+                            # Mean-preserving normalization + clip
+                            mean_d = verl_F.masked_mean(d_t, response_mask)
+                            w_t = d_t / (mean_d + 1e-8)
+                            w_t = torch.clamp(w_t, 1 - credit_clip_eps, 1 + credit_clip_eps)
+                            w_t = w_t * response_mask  # mask padding
+
+                            # Apply credit to advantages: Â_t = A * ((1-λ) + λ * w_t)
+                            advantages = advantages * ((1 - credit_lambda) + credit_lambda * w_t)
+
+                            # Log credit metrics
+                            valid_w = w_t[response_mask.bool()]
+                            if valid_w.numel() > 0:
+                                append_to_dict(metrics, {
+                                    "actor/credit_weight_mean": valid_w.mean().item(),
+                                    "actor/credit_weight_std": valid_w.std().item(),
+                                    "actor/credit_d_mean": d_t[response_mask.bool()].mean().item(),
+                                })
+                                if credit_use_reliability_gating:
+                                    append_to_dict(metrics, {
+                                        "actor/credit_overlap_mean": overlap_t[response_mask.bool()].mean().item(),
+                                    })
 
                     pg_loss, pg_clipfrac, ppo_kl, pg_clipfrac_lower = policy_loss_fn(
                         old_log_prob=old_log_prob,

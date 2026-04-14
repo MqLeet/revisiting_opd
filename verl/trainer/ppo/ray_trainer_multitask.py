@@ -126,8 +126,9 @@ class AdvantageEstimator(str, Enum):
     GRPO_PASSK = "grpo_passk"
     GiGPO = 'gigpo'
     OPD = "opd" # add on-policy distillation
-    PLACE_HOLDER = "placeholder"  # for topk opd, where we do not compute advantage at all, 
+    PLACE_HOLDER = "placeholder"  # for topk opd, where we do not compute advantage at all,
     # but still want to use the same code structure(and reserve for future combination with other adv estimator)
+    GRPO_CREDIT = "grpo_credit"  # GRPO + distribution-level credit assignment from teacher top-K KL
 
 
 @dataclass
@@ -405,6 +406,22 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=0.0, lam=1.0, num_re
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
 
+    elif adv_estimator == AdvantageEstimator.GRPO_CREDIT:
+        # GRPO advantage + distribution-level credit (applied in dp_actor.py)
+        grpo_calculation_mask = data.batch["response_mask"]
+        if multi_turn:
+            response_length = grpo_calculation_mask.size(1)
+            grpo_calculation_mask = data.batch["loss_mask"][:, -response_length:]
+        advantages, returns = core_algos.compute_grpo_outcome_advantage(
+            token_level_rewards=data.batch["token_level_rewards"],
+            response_mask=grpo_calculation_mask,
+            index=data.non_tensor_batch["uid"],
+            traj_index=data.non_tensor_batch['traj_uid'],
+            norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+        )
+        data.batch["advantages"] = advantages
+        data.batch["returns"] = returns
+
     elif adv_estimator == AdvantageEstimator.PLACE_HOLDER:
         # for topk opd, we do not compute advantage at all, but still want to use the same code structure(and reserve for future combination with other adv estimator)
         data.batch["advantages"] = torch.zeros_like(data.batch["token_level_scores"])
@@ -525,6 +542,7 @@ class RayPPOTrainer:
             AdvantageEstimator.GiGPO,
             AdvantageEstimator.OPD,
             AdvantageEstimator.PLACE_HOLDER,
+            AdvantageEstimator.GRPO_CREDIT,
         ]:
             self.use_critic = False
         else:
@@ -1504,6 +1522,12 @@ class RayPPOTrainer:
                         # update actor
                         with _timer("update_actor", timing_raw):
                             batch.meta_info["multi_turn"] = self.config.actor_rollout_ref.rollout.multi_turn.enable
+                            # Pass credit weighting config to actor
+                            credit_cfg = self.config.algorithm.get("credit", {})
+                            batch.meta_info["credit_enable"] = credit_cfg.get("enable", False)
+                            batch.meta_info["credit_lambda"] = credit_cfg.get("lam", 0.5)
+                            batch.meta_info["credit_clip_eps"] = credit_cfg.get("clip_eps", 0.5)
+                            batch.meta_info["credit_use_reliability_gating"] = credit_cfg.get("use_reliability_gating", False)
                             actor_output = self.actor_rollout_wg.update_actor(batch)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                         metrics.update(actor_output_metrics)
